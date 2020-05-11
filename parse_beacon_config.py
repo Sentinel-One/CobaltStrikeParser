@@ -2,6 +2,8 @@
 Parses CobaltStrike Beacon's configuration from PE file or memory dump.
 By Gal Kristal from SentinelOne (gkristal.w@gmail.com)
 
+Inspired by https://github.com/JPCERTCC/aa-tools/blob/master/cobaltstrikescan.py
+
 TODO:
  1. Parse headers modifiers
  2. Dynamic size parsing
