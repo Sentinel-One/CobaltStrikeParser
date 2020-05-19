@@ -78,12 +78,7 @@ class packedSetting:
         self_repr = bytearray(6)
         self_repr[1] = self.pos
         self_repr[3] = self.datatype
-        # Stupid hack
-        if self.length == 128:
-            self_repr[4:6] = b'\x00\xc2'
-            self_repr.extend(b'\x80')
-        else:
-            self_repr[4:6] = self.length.to_bytes(2, 'big')
+        self_repr[4:6] = self.length.to_bytes(2, 'big')
         return self_repr
 
     def pretty_repr(self, full_config_data):
