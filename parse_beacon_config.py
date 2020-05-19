@@ -223,7 +223,7 @@ class BeaconSettings:
         self.settings['Proxy_Config'] = packedSetting(32, confConsts.TYPE_STR, 128)
         self.settings['Proxy_User'] = packedSetting(33, confConsts.TYPE_STR, 64)
         self.settings['Proxy_Password'] = packedSetting(34, confConsts.TYPE_STR, 64)
-        self.settings['bProxy_Behavior'] = packedSetting(35, confConsts.TYPE_SHORT, enum=self.ACCESS_TYPE)
+        self.settings['Proxy_Behavior'] = packedSetting(35, confConsts.TYPE_SHORT, enum=self.ACCESS_TYPE)
         # Option 36 is deprecated
         self.settings['Watermark'] = packedSetting(37, confConsts.TYPE_INT)
         self.settings['bStageCleanup'] = packedSetting(38, confConsts.TYPE_SHORT, isBool=True)
@@ -259,7 +259,7 @@ class cobaltstrikeConfig:
 
     @staticmethod
     def decode_config(cfg_blob, version):
-        return "".join(chr(cfg_offset ^ confConsts.XORBYTES[version]) for cfg_offset in cfg_blob).encode('utf-8')
+        return bytes([cfg_offset ^ confConsts.XORBYTES[version] for cfg_offset in cfg_blob])
 
     def _parse_config(self, version, quiet=False, as_json=False):
         encoded_config_offset = self.data.find(confConsts.START_PATTERNS[version])
