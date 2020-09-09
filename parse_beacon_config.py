@@ -18,6 +18,7 @@ from base64 import b64encode
 from sys import argv
 import argparse
 import io
+import re
 
 COLUMN_WIDTH = 35
 SUPPORTED_VERSIONS = (3, 4)
@@ -37,10 +38,10 @@ class confConsts:
     TYPE_STR = 3
 
     START_PATTERNS = {
-    3: b'\x69\x68\x69\x68\x69\x6b',
-    4: b'\x2e\x2f\x2e\x2f\x2e\x2c'
+    3: b'\x69\x68\x69\x68\x69\x6b..\x69\x6b\x69\x68\x69\x6b..\x69\x6a',
+    4: b'\x2e\x2f\x2e\x2f\x2e\x2c..\x2e\x2c\x2e\x2f\x2e\x2c..\x2e'
     }
-    START_PATTERN_DECODED = b'\x00\x01\x00\x01\x00\x02'
+    START_PATTERN_DECODED = b'\x00\x01\x00\x01\x00\x02..\x00\x02\x00\x01\x00\x02..\x00'
     CONFIG_SIZE = 4096
     XORBYTES = {
     3: 0x69,
@@ -221,11 +222,13 @@ class BeaconSettings:
         self.settings['MaxGetSize'] = packedSetting(4, confConsts.TYPE_INT)
         self.settings['Jitter'] = packedSetting(5, confConsts.TYPE_SHORT)
         self.settings['MaxDNS'] = packedSetting(6, confConsts.TYPE_SHORT)
-        # Maybe should be silenced but i leave it for now
-        self.settings['PublicKey'] = packedSetting(7, confConsts.TYPE_STR, 256, isBlob=True)
+        # Silencing for now
+        #self.settings['PublicKey'] = packedSetting(7, confConsts.TYPE_STR, 256, isBlob=True)
         self.settings['C2Server'] = packedSetting(8, confConsts.TYPE_STR, 256)
         self.settings['UserAgent'] = packedSetting(9, confConsts.TYPE_STR, 128)
         self.settings['HttpPostUri'] = packedSetting(10, confConsts.TYPE_STR, 64)
+
+        # ref: https://www.cobaltstrike.com/help-malleable-c2 | https://usualsuspect.re/article/cobalt-strikes-malleable-c2-under-the-hood
         self.settings['Malleable_C2_Instructions'] = packedSetting(11, confConsts.TYPE_STR, 256, isBlob=True,isMalleableStream=True)
         self.settings['HttpGet_Metadata'] = packedSetting(12, confConsts.TYPE_STR, 256, isHeaders=True)
         self.settings['HttpPost_Metadata'] = packedSetting(13, confConsts.TYPE_STR, 256, isHeaders=True)
@@ -277,10 +280,16 @@ class BeaconSettings:
 
 
 class cobaltstrikeConfig:
-    def __init__(self, filepath):
-        self.filepath = filepath
-        with open(filepath, 'rb') as f:
-            self.data = f.read()
+    def __init__(self, f):
+            '''
+            f: file path or file-like object
+            '''
+            self.data = None
+            if isinstance(f, str):
+                with open(f, 'rb') as fobj:
+                    self.data = fobj.read()
+            else:
+                self.data = f.read()
 
     """Parse the CobaltStrike configuration"""
 
@@ -289,12 +298,15 @@ class cobaltstrikeConfig:
         return bytes([cfg_offset ^ confConsts.XORBYTES[version] for cfg_offset in cfg_blob])
 
     def _parse_config(self, version, quiet=False, as_json=False):
-        encoded_config_offset = self.data.find(confConsts.START_PATTERNS[version])
-        decoded_config_offset = self.data.find(confConsts.START_PATTERN_DECODED)
-        if encoded_config_offset < 0 and decoded_config_offset < 0:
+        re_start_match = re.search(confConsts.START_PATTERNS[version], self.data)
+        re_start_decoded_match = re.search(confConsts.START_PATTERN_DECODED, self.data)
+        
+        if not re_start_match and not re_start_decoded_match:
             return False
-
-        if encoded_config_offset > 0:
+        encoded_config_offset = re_start_match.start() if re_start_match else -1
+        decoded_config_offset = re_start_decoded_match.start() if re_start_decoded_match else -1
+        
+        if encoded_config_offset >= 0:
             full_config_data = cobaltstrikeConfig.decode_config(self.data[encoded_config_offset : encoded_config_offset + confConsts.CONFIG_SIZE], version=version)
         else:
             full_config_data = self.data[decoded_config_offset : decoded_config_offset + confConsts.CONFIG_SIZE]
@@ -340,7 +352,8 @@ class cobaltstrikeConfig:
             if self._parse_config(version=version, quiet=quiet, as_json=as_json):
                 return True
 
-        print("Configuration not found. Are you sure this is a beacon?")
+        if __name__ == '__main__':
+            print("Configuration not found. Are you sure this is a beacon?")
         return False
 
 
