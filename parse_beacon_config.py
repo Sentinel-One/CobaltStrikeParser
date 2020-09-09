@@ -17,6 +17,7 @@ import json
 from base64 import b64encode
 from sys import argv
 import argparse
+import io
 
 COLUMN_WIDTH = 35
 SUPPORTED_VERSIONS = (3, 4)
@@ -46,10 +47,15 @@ class confConsts:
     4: 0x2e
     }
 
+def read_dword_be(fh):
+    data = fh.read(4)
+    if not data or len(data) != 4:
+        return None
+    return unpack(">I",data)[0]
 
 class packedSetting:
 
-    def __init__(self, pos, datatype, length=0, isBlob=False, isHeaders=False, isIpAddress=False, isBool=False, isDate=False, boolFalseValue=0, isProcInjectTransform=False, enum=None, mask=None):
+    def __init__(self, pos, datatype, length=0, isBlob=False, isHeaders=False, isIpAddress=False, isBool=False, isDate=False, boolFalseValue=0, isProcInjectTransform=False, isMalleableStream=False,enum=None, mask=None):
         self.pos = pos
         self.datatype = datatype
         self.is_blob = isBlob
@@ -57,6 +63,7 @@ class packedSetting:
         self.is_ipaddress = isIpAddress
         self.is_bool = isBool
         self.is_date = isDate
+        self.is_malleable_stream = isMalleableStream
         self.bool_false_value = boolFalseValue
         self.is_transform = isProcInjectTransform
         self.enum = enum
@@ -154,6 +161,32 @@ class packedSetting:
                 ret_arr.append(append if append_length < 256 and append != bytes(append_length) else 'Empty')
                 return ret_arr
 
+            if self.is_malleable_stream:
+                prog = []
+                fh = io.BytesIO(conf_data)
+                while True:
+                    op = read_dword_be(fh)
+                    if not op:
+                        break
+                    if op == 1:
+                        l = read_dword_be(fh)
+                        prog.append("Remove %d bytes from the end" % l)
+                    elif op == 2:
+                        l = read_dword_be(fh)
+                        prog.append("Remove %d bytes from the beginning" % l)
+                    elif op == 3:
+                        prog.append("Base64 decode")
+                    elif op == 8:
+                        prog.append("NetBIOS decode 'a'")
+                    elif op == 11:
+                        prog.append("NetBIOS decode 'A'")
+                    elif op == 13:
+                        prog.append("Base64 URL-safe decode")
+                    elif op == 15:
+                        prog.append("XOR mask w/ random key")
+
+                conf_data = prog
+
             return conf_data
 
         if self.is_headers:
@@ -193,8 +226,7 @@ class BeaconSettings:
         self.settings['C2Server'] = packedSetting(8, confConsts.TYPE_STR, 256)
         self.settings['UserAgent'] = packedSetting(9, confConsts.TYPE_STR, 128)
         self.settings['HttpPostUri'] = packedSetting(10, confConsts.TYPE_STR, 64)
-        # Unknown data, silencing for now
-        #self.settings['binary.http-get.server.output'] = packedSetting(11, confConsts.TYPE_STR, 256, isBlob=True)
+        self.settings['Malleable_C2_Instructions'] = packedSetting(11, confConsts.TYPE_STR, 256, isBlob=True,isMalleableStream=True)
         self.settings['HttpGet_Metadata'] = packedSetting(12, confConsts.TYPE_STR, 256, isHeaders=True)
         self.settings['HttpPost_Metadata'] = packedSetting(13, confConsts.TYPE_STR, 256, isHeaders=True)
         self.settings['SpawnTo'] = packedSetting(14, confConsts.TYPE_STR, 16, isBlob=True)
