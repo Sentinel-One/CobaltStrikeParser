@@ -19,7 +19,9 @@ from sys import argv
 import argparse
 import io
 import re
+import pefile
 
+THRESHOLD = 1100
 COLUMN_WIDTH = 35
 SUPPORTED_VERSIONS = (3, 4)
 
@@ -28,6 +30,11 @@ class Base64Encoder(json.JSONEncoder):
         if isinstance(o, bytes):
             return b64encode(o).decode()
         return json.JSONEncoder.default(self, o)
+
+
+def cli_print(msg, end='\n'):
+    if __name__ == '__main__':
+        print(msg, end=end)
 
 
 class confConsts:
@@ -210,7 +217,8 @@ class BeaconSettings:
 
     def __init__(self, version):
         if version not in SUPPORTED_VERSIONS:
-            print("Error: Only supports version 3 and 4, not %d" % version)
+            cli_print("Error: Only supports version 3 and 4, not %d" % version)
+            return
         self.version = version
         self.settings = OrderedDict()
         self.init()
@@ -243,6 +251,7 @@ class BeaconSettings:
         self.settings['SSH_Username'] = packedSetting(23, confConsts.TYPE_STR, 128)
         self.settings['SSH_Password_Plaintext'] = packedSetting(24, confConsts.TYPE_STR, 128)
         self.settings['SSH_Password_Pubkey'] = packedSetting(25, confConsts.TYPE_STR, 6144)
+        self.settings['SSH_Banner'] = packedSetting(54, confConsts.TYPE_STR, 128)
 
         self.settings['HttpGet_Verb'] = packedSetting(26, confConsts.TYPE_STR, 16)
         self.settings['HttpPost_Verb'] = packedSetting(27, confConsts.TYPE_STR, 16)
@@ -278,6 +287,11 @@ class BeaconSettings:
         self.settings['bUsesCookies'] = packedSetting(50, confConsts.TYPE_SHORT, isBool=True)
         self.settings['HostHeader'] = packedSetting(54, confConsts.TYPE_STR, 128)
 
+        # Silencing as I've yet to test it on a sample with those options
+        #self.settings['smbFrameHeader'] = packedSetting(57, confConsts.TYPE_STR, 128, isBlob=True)
+        #self.settings['tcpFrameHeader'] = packedSetting(58, confConsts.TYPE_STR, 128, isBlob=True)
+        self.settings['headersToRemove'] = packedSetting(59, confConsts.TYPE_STR, 64)
+
 
 class cobaltstrikeConfig:
     def __init__(self, f):
@@ -298,11 +312,19 @@ class cobaltstrikeConfig:
         return bytes([cfg_offset ^ confConsts.XORBYTES[version] for cfg_offset in cfg_blob])
 
     def _parse_config(self, version, quiet=False, as_json=False):
+        '''
+        Parses beacon's configuration from beacon PE or memory dump.
+        Returns json of config is found; else it returns None.
+
+        :int version: Try a specific version (3 or 4), or leave None to try both of them
+        :bool quiet: Whether to print missing or empty settings
+        :bool as_json: Whether to dump as json
+        '''
         re_start_match = re.search(confConsts.START_PATTERNS[version], self.data)
         re_start_decoded_match = re.search(confConsts.START_PATTERN_DECODED, self.data)
         
         if not re_start_match and not re_start_decoded_match:
-            return False
+            return None
         encoded_config_offset = re_start_match.start() if re_start_match else -1
         decoded_config_offset = re_start_decoded_match.start() if re_start_decoded_match else -1
         
@@ -316,52 +338,101 @@ class cobaltstrikeConfig:
         for conf_name, packed_conf in settings:
             parsed_setting = packed_conf.pretty_repr(full_config_data)
 
+            parsed_config[conf_name] = parsed_setting
             if as_json:
-                parsed_config[conf_name] = parsed_setting
                 continue
 
             if parsed_setting == 'Not Found' and quiet:
                 continue
             if type(parsed_setting) != list:
-                print("{: <{width}} - {val}".format(conf_name, width=COLUMN_WIDTH-3, val=parsed_setting))
+                if quiet and type(parsed_setting) == str and parsed_setting.strip() == '':
+                    continue
+                cli_print("{: <{width}} - {val}".format(conf_name, width=COLUMN_WIDTH-3, val=parsed_setting))
             elif parsed_setting == []:
-                print("{: <{width}} - {val}".format(conf_name, width=COLUMN_WIDTH-3, val='Empty'))
+                if quiet:
+                    continue
+                cli_print("{: <{width}} - {val}".format(conf_name, width=COLUMN_WIDTH-3, val='Empty'))
             else:
-                print("{: <{width}} - {val}".format(conf_name, width=COLUMN_WIDTH-3, val=parsed_setting[0]))
+                cli_print("{: <{width}} - {val}".format(conf_name, width=COLUMN_WIDTH-3, val=parsed_setting[0]))
                 for val in parsed_setting[1:]:
-                    print(' ' * COLUMN_WIDTH, end='')
-                    print(val)
+                    cli_print(' ' * COLUMN_WIDTH, end='')
+                    cli_print(val)
 
         if as_json:
-            print(json.dumps(parsed_config, cls=Base64Encoder))
+            cli_print(json.dumps(parsed_config, cls=Base64Encoder))
 
-        return True
+        return parsed_config
 
     def parse_config(self, version=None, quiet=False, as_json=False):
         '''
-        Parses beacon's configuration from stager dll or memory dump
-        :bool quiet: Whether to print missing settings
+        Parses beacon's configuration from beacon PE or memory dump
+        Returns json of config is found; else it returns None.
+
+        :int version: Try a specific version (3 or 4), or leave None to try both of them
+        :bool quiet: Whether to print missing or empty settings
         :bool as_json: Whether to dump as json
         '''
 
         if not version:
             for ver in SUPPORTED_VERSIONS:
-                if self._parse_config(version=ver, quiet=quiet, as_json=as_json):
-                    return True
+                parsed = self._parse_config(version=ver, quiet=quiet, as_json=as_json)
+                if parsed:
+                    return parsed
         else:
-            if self._parse_config(version=version, quiet=quiet, as_json=as_json):
-                return True
+            return self._parse_config(version=version, quiet=quiet, as_json=as_json)
+        return None
 
-        if __name__ == '__main__':
-            print("Configuration not found. Are you sure this is a beacon?")
-        return False
+
+    def parse_encrypted_config(self, version=None, quiet=False, as_json=False):
+        '''
+        Parses beacon's configuration from stager dll or memory dump
+        Returns json of config is found; else it returns None.
+
+        :bool quiet: Whether to print missing settings
+        :bool as_json: Whether to dump as json
+        '''
+
+        pe = pefile.PE(data=self.data)
+        data_sections = [s for s in pe.sections if s.Name.find(b'.data') != -1]
+        if not data_sections:
+            cli_print("Failed to find .data section")
+            return False
+        data = data_sections[0].get_data()
+
+        offset = 0
+        key_found = False
+        while offset < len(data):
+            key = data[offset:offset+4]
+            if key != bytes(4):
+                if data.count(key) >= THRESHOLD:
+                    key_found = True
+                    size = int.from_bytes(data[offset-4:offset], 'little')
+                    encrypted_data_offset = offset+16 - (offset % 16)
+                    break
+
+            offset += 4
+
+        if not key_found:
+            return False
+
+        # decrypt
+        enc_data = data[encrypted_data_offset:encrypted_data_offset+size]
+        dec_data = []
+        for i,c in enumerate(enc_data):
+            dec_data.append(c ^ key[i % 4])
+
+        dec_data = bytes(dec_data)
+        self.data = dec_data
+        return self.parse_config(version=version, quiet=quiet, as_json=as_json)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Parses CobaltStrike Beacon's configuration from PE or memory dump.")
-    parser.add_argument("path", help="Stager's file path")
+    parser.add_argument("path", help="Beacon file path")
     parser.add_argument("--json", help="Print as json", action="store_true", default=False)
-    parser.add_argument("--quiet", help="Do not print missing settings", action="store_true", default=False)
-    parser.add_argument("--version", help="Try as specific cobalt version (3 or 4). If not specified, tries both. \nFor decoded configs, this must be set for accuracy.", type=int)
+    parser.add_argument("--quiet", help="Do not print missing or empty settings", action="store_true", default=False)
+    parser.add_argument("--version", help="Try as specific cobalt version (3 or 4). If not specified, tries both.", type=int)
     args = parser.parse_args()
-    cobaltstrikeConfig(args.path).parse_config(version=args.version, quiet=args.quiet, as_json=args.json)
+    if not cobaltstrikeConfig(args.path).parse_config(version=args.version, quiet=args.quiet, as_json=args.json):
+        if not cobaltstrikeConfig(args.path).parse_encrypted_config(version=args.version, quiet=args.quiet, as_json=args.json):
+            print("Failed to find any beacon configuration")
