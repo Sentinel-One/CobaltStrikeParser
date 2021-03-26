@@ -236,7 +236,7 @@ class BeaconSettings:
         self.settings['Jitter'] = packedSetting(5, confConsts.TYPE_SHORT)
         self.settings['MaxDNS'] = packedSetting(6, confConsts.TYPE_SHORT)
         # Silencing for now
-        #self.settings['PublicKey_MD5'] = packedSetting(7, confConsts.TYPE_STR, 256, isBlob=True)
+        #self.settings['PublicKey'] = packedSetting(7, confConsts.TYPE_STR, 256, isBlob=True)
         self.settings['PublicKey_MD5'] = packedSetting(7, confConsts.TYPE_STR, 256, isBlob=True, hashBlob=True)
         self.settings['C2Server'] = packedSetting(8, confConsts.TYPE_STR, 256)
         self.settings['UserAgent'] = packedSetting(9, confConsts.TYPE_STR, 128)
