@@ -20,6 +20,7 @@ import argparse
 import io
 import re
 import pefile
+import hashlib
 
 THRESHOLD = 1100
 COLUMN_WIDTH = 35
@@ -63,7 +64,7 @@ def read_dword_be(fh):
 
 class packedSetting:
 
-    def __init__(self, pos, datatype, length=0, isBlob=False, isHeaders=False, isIpAddress=False, isBool=False, isDate=False, boolFalseValue=0, isProcInjectTransform=False, isMalleableStream=False,enum=None, mask=None):
+    def __init__(self, pos, datatype, length=0, isBlob=False, isHeaders=False, isIpAddress=False, isBool=False, isDate=False, boolFalseValue=0, isProcInjectTransform=False, isMalleableStream=False, hashBlob=False, enum=None, mask=None):
         self.pos = pos
         self.datatype = datatype
         self.is_blob = isBlob
@@ -74,6 +75,7 @@ class packedSetting:
         self.is_malleable_stream = isMalleableStream
         self.bool_false_value = boolFalseValue
         self.is_transform = isProcInjectTransform
+        self.hashBlob = hashBlob
         self.enum = enum
         self.mask = mask
         if datatype == confConsts.TYPE_STR and length == 0:
@@ -132,7 +134,7 @@ class packedSetting:
                     return "%s-%s-%s" % (fulldate[0:4], fulldate[4:6], fulldate[6:])
 
                 return conf_data
-
+        
         if self.is_blob:
             if self.enum != None:
                 ret_arr = []
@@ -194,6 +196,9 @@ class packedSetting:
                         prog.append("XOR mask w/ random key")
 
                 conf_data = prog
+            if self.hashBlob:
+                conf_data = conf_data.strip(b'\x00')
+                conf_data = hashlib.md5(conf_data).hexdigest()
 
             return conf_data
 
@@ -232,6 +237,7 @@ class BeaconSettings:
         self.settings['MaxDNS'] = packedSetting(6, confConsts.TYPE_SHORT)
         # Silencing for now
         #self.settings['PublicKey'] = packedSetting(7, confConsts.TYPE_STR, 256, isBlob=True)
+        self.settings['PublicKey_MD5'] = packedSetting(7, confConsts.TYPE_STR, 256, isBlob=True, hashBlob=True)
         self.settings['C2Server'] = packedSetting(8, confConsts.TYPE_STR, 256)
         self.settings['UserAgent'] = packedSetting(9, confConsts.TYPE_STR, 128)
         self.settings['HttpPostUri'] = packedSetting(10, confConsts.TYPE_STR, 64)
