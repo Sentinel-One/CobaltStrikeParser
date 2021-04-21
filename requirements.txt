@@ -1,2 +1,4 @@
 netstruct==1.1.2
 pefile==2019.4.18
+#M2Crypto==0.37.1
+#pycryptodome==3.10.1

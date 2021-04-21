@@ -1,6 +1,7 @@
+#!/usr/bin/python3
 '''
 Parses CobaltStrike Beacon's configuration from PE file or memory dump.
-By Gal Kristal from SentinelOne (gkristal.w@gmail.com)
+By Gal Kristal from SentinelOne (gkristal.w@gmail.com) @gal_kristal
 
 Inspired by https://github.com/JPCERTCC/aa-tools/blob/master/cobaltstrikescan.py
 
@@ -9,34 +10,27 @@ TODO:
  2. Dynamic size parsing
 '''
 
-from struct import unpack
+from beacon_utils import *
+from struct import unpack, unpack_from
 from socket import inet_ntoa
 from collections import OrderedDict
 from netstruct import unpack as netunpack
-import json
-from base64 import b64encode
-from sys import argv
 import argparse
 import io
 import re
 import pefile
+import os
 import hashlib
+from io import BytesIO
 
 THRESHOLD = 1100
 COLUMN_WIDTH = 35
 SUPPORTED_VERSIONS = (3, 4)
+SILENT_CONFIGS = ['PublicKey', 'ProcInject_Stub', 'smbFrameHeader', 'tcpFrameHeader', 'SpawnTo']
 
-class Base64Encoder(json.JSONEncoder):
-    def default(self, o):
-        if isinstance(o, bytes):
-            return b64encode(o).decode()
-        return json.JSONEncoder.default(self, o)
-
-
-def cli_print(msg, end='\n'):
+def _cli_print(msg, end='\n'):
     if __name__ == '__main__':
         print(msg, end=end)
-
 
 class confConsts:
     MAX_SETTINGS = 64
@@ -56,12 +50,6 @@ class confConsts:
     4: 0x2e
     }
 
-def read_dword_be(fh):
-    data = fh.read(4)
-    if not data or len(data) != 4:
-        return None
-    return unpack(">I",data)[0]
-
 class packedSetting:
 
     def __init__(self, pos, datatype, length=0, isBlob=False, isHeaders=False, isIpAddress=False, isBool=False, isDate=False, boolFalseValue=0, isProcInjectTransform=False, isMalleableStream=False, hashBlob=False, enum=None, mask=None):
@@ -78,6 +66,8 @@ class packedSetting:
         self.hashBlob = hashBlob
         self.enum = enum
         self.mask = mask
+        self.transform_get = None
+        self.transform_post = None
         if datatype == confConsts.TYPE_STR and length == 0:
             raise(Exception("if datatype is TYPE_STR then length must not be 0"))
 
@@ -98,8 +88,62 @@ class packedSetting:
         self_repr[4:6] = self.length.to_bytes(2, 'big')
         return self_repr
 
+    def parse_transformdata(self, data):
+        '''
+        Args:
+            data (bytes): Raw communication transforam data
+        
+        Returns:
+            dict: Dict of transform commands that should be convenient for communication forging
+        
+        '''
+        dio = io.BytesIO(data)
+        trans = {'ConstHeaders':[], 'ConstParams': [], 'Metadata': [], 'SessionId': [], 'Output': []}
+        current_category = 'Constants'
+
+        # TODO: replace all magic numbers here with enum
+        while True:
+            tstep = read_dword_be(dio)
+            if tstep == 7:
+                name = read_dword_be(dio)
+                if self.pos == 12: # GET
+                    current_category = 'Metadata'
+                else: # POST
+                    current_category = 'SessionId' if name == 0 else 'Output'
+            elif tstep in (1, 2, 5, 6):
+                length = read_dword_be(dio)
+                step_data = dio.read(length).decode()
+                trans[current_category].append(BeaconSettings.TSTEPS[tstep] + ' "' + step_data + '"')
+            elif tstep in (10, 16, 9):
+                length = read_dword_be(dio)
+                step_data = dio.read(length).decode()
+                if tstep == 9:
+                    trans['ConstParams'].append(step_data)
+                else:
+                    trans['ConstHeaders'].append(step_data)
+            elif tstep in (3, 4, 13, 8, 11, 12, 15):
+                trans[current_category].append(BeaconSettings.TSTEPS[tstep])
+            else:
+                break
+
+        if self.pos == 12:
+            self.transform_get = trans
+        else:
+            self.transform_post = trans
+
+        return trans
+
+
     def pretty_repr(self, full_config_data):
         data_offset = full_config_data.find(self.binary_repr())
+        if data_offset < 0 and self.datatype == confConsts.TYPE_STR:
+            self.length = 16
+            while self.length < 2048:
+                data_offset = full_config_data.find(self.binary_repr())
+                if data_offset > 0:
+                    break
+                self.length *= 2
+
         if data_offset < 0:
             return 'Not Found'
 
@@ -128,7 +172,7 @@ class packedSetting:
                 return inet_ntoa(conf_data)
                 
             else:
-                conf_data = unpack('>I', conf_data)[0]
+                conf_data = unpack('>i', conf_data)[0]
                 if self.is_date and conf_data != 0:
                     fulldate = str(conf_data)
                     return "%s-%s-%s" % (fulldate[0:4], fulldate[4:6], fulldate[6:])
@@ -203,9 +247,7 @@ class packedSetting:
             return conf_data
 
         if self.is_headers:
-            conf_data = conf_data.strip(b'\x00')
-            conf_data = [chunk[1:].decode() for chunk in conf_data.split(b'\x00') if len(chunk) > 1]
-            return conf_data
+            return self.parse_transformdata(conf_data)
 
         conf_data = conf_data.strip(b'\x00').decode()
         return conf_data
@@ -216,13 +258,13 @@ class BeaconSettings:
     BEACON_TYPE = {0x0: "HTTP", 0x1: "Hybrid HTTP DNS", 0x2: "SMB", 0x4: "TCP", 0x8: "HTTPS", 0x10: "Bind TCP"}
     ACCESS_TYPE = {0x1: "Use direct connection", 0x2: "Use IE settings", 0x4: "Use proxy server"}
     EXECUTE_TYPE = {0x1: "CreateThread", 0x2: "SetThreadContext", 0x3: "CreateRemoteThread", 0x4: "RtlCreateUserThread", 0x5: "NtQueueApcThread", 0x6: None, 0x7: None, 0x8: "NtQueueApcThread-s"}
-    #TRANSFORMSTEP = {1: "append", 2: "prepend", 3: "base64", 4: "print", 5: "parameter", 6: "header", 7: "build", 8: "netbios", 9: "_parameter", 10: "_header", 
-    #                11: "netbiosu", 12: "uri_append",  13: "base64_url", 14: "strrep", 15: "mask"}
     ALLOCATION_FUNCTIONS = {0: "VirtualAllocEx", 1: "NtMapViewOfSection"}
+    TSTEPS = {1: "append", 2: "prepend", 3: "base64", 4: "print", 5: "parameter", 6: "header", 7: "build", 8: "netbios", 9: "const_parameter", 10: "const_header", 11: "netbiosu", 12: "uri_append", 13: "base64url", 14: "strrep", 15: "mask", 16: "const_host_header"}
+    ROTATE_STRATEGY = ["round-robin", "random", "failover", "failover-5x", "failover-50x", "failover-100x", "failover-1m", "failover-5m", "failover-15m", "failover-30m", "failover-1h", "failover-3h", "failover-6h", "failover-12h", "failover-1d", "rotate-1m", "rotate-5m", "rotate-15m", "rotate-30m", "rotate-1h", "rotate-3h", "rotate-6h", "rotate-12h", "rotate-1d" ]
 
     def __init__(self, version):
         if version not in SUPPORTED_VERSIONS:
-            cli_print("Error: Only supports version 3 and 4, not %d" % version)
+            _cli_print("Error: Only supports version 3 and 4, not %d" % version)
             return
         self.version = version
         self.settings = OrderedDict()
@@ -235,17 +277,23 @@ class BeaconSettings:
         self.settings['MaxGetSize'] = packedSetting(4, confConsts.TYPE_INT)
         self.settings['Jitter'] = packedSetting(5, confConsts.TYPE_SHORT)
         self.settings['MaxDNS'] = packedSetting(6, confConsts.TYPE_SHORT)
-        # Silencing for now
-        #self.settings['PublicKey'] = packedSetting(7, confConsts.TYPE_STR, 256, isBlob=True)
+        # Silenced config
+        self.settings['PublicKey'] = packedSetting(7, confConsts.TYPE_STR, 256, isBlob=True)
         self.settings['PublicKey_MD5'] = packedSetting(7, confConsts.TYPE_STR, 256, isBlob=True, hashBlob=True)
         self.settings['C2Server'] = packedSetting(8, confConsts.TYPE_STR, 256)
         self.settings['UserAgent'] = packedSetting(9, confConsts.TYPE_STR, 128)
+        # TODO: Concat with C2Server?
         self.settings['HttpPostUri'] = packedSetting(10, confConsts.TYPE_STR, 64)
 
+        # This is how the server transforms its communication to the beacon
         # ref: https://www.cobaltstrike.com/help-malleable-c2 | https://usualsuspect.re/article/cobalt-strikes-malleable-c2-under-the-hood
+        # TODO: Switch to isHeaders parser logic
         self.settings['Malleable_C2_Instructions'] = packedSetting(11, confConsts.TYPE_STR, 256, isBlob=True,isMalleableStream=True)
+        # This is the way the beacon transforms its communication to the server
+        # TODO: Change name to HttpGet_Client and HttpPost_Client
         self.settings['HttpGet_Metadata'] = packedSetting(12, confConsts.TYPE_STR, 256, isHeaders=True)
         self.settings['HttpPost_Metadata'] = packedSetting(13, confConsts.TYPE_STR, 256, isHeaders=True)
+
         self.settings['SpawnTo'] = packedSetting(14, confConsts.TYPE_STR, 16, isBlob=True)
         self.settings['PipeName'] = packedSetting(15, confConsts.TYPE_STR, 128)
         # Options 16-18 are deprecated in 3.4
@@ -264,6 +312,7 @@ class BeaconSettings:
         self.settings['HttpPostChunk'] = packedSetting(28, confConsts.TYPE_INT)
         self.settings['Spawnto_x86'] = packedSetting(29, confConsts.TYPE_STR, 64)
         self.settings['Spawnto_x64'] = packedSetting(30, confConsts.TYPE_STR, 64)
+        # Whether the beacon encrypts his communication, should be always on (1) in beacon 4
         self.settings['CryptoScheme'] = packedSetting(31, confConsts.TYPE_SHORT)
         self.settings['Proxy_Config'] = packedSetting(32, confConsts.TYPE_STR, 128)
         self.settings['Proxy_User'] = packedSetting(33, confConsts.TYPE_STR, 64)
@@ -288,15 +337,28 @@ class BeaconSettings:
         # If True then allocation is using NtMapViewOfSection
         self.settings['ProcInject_AllocationMethod'] = packedSetting(52, confConsts.TYPE_SHORT, enum=self.ALLOCATION_FUNCTIONS)
         
-        # Unknown data, silencing for now
-        #self.settings['ProcInject_Stub'] = packedSetting(53, confConsts.TYPE_STR, 16, isBlob=True)
+        # Unknown data, silenced for now
+        self.settings['ProcInject_Stub'] = packedSetting(53, confConsts.TYPE_STR, 16, isBlob=True)
         self.settings['bUsesCookies'] = packedSetting(50, confConsts.TYPE_SHORT, isBool=True)
         self.settings['HostHeader'] = packedSetting(54, confConsts.TYPE_STR, 128)
 
-        # Silencing as I've yet to test it on a sample with those options
-        #self.settings['smbFrameHeader'] = packedSetting(57, confConsts.TYPE_STR, 128, isBlob=True)
-        #self.settings['tcpFrameHeader'] = packedSetting(58, confConsts.TYPE_STR, 128, isBlob=True)
+        # Silenced as I've yet to test it on a sample with those options
+        self.settings['smbFrameHeader'] = packedSetting(57, confConsts.TYPE_STR, 128, isBlob=True)
+        self.settings['tcpFrameHeader'] = packedSetting(58, confConsts.TYPE_STR, 128, isBlob=True)
         self.settings['headersToRemove'] = packedSetting(59, confConsts.TYPE_STR, 64)
+
+        # DNS Beacon
+        self.settings['DNS_Beaconing'] = packedSetting(60, confConsts.TYPE_STR, 33)
+        self.settings['DNS_get_TypeA'] = packedSetting(61, confConsts.TYPE_STR, 33)
+        self.settings['DNS_get_TypeAAAA'] = packedSetting(62, confConsts.TYPE_STR, 33)
+        self.settings['DNS_get_TypeTXT'] = packedSetting(63, confConsts.TYPE_STR, 33)
+        self.settings['DNS_put_metadata'] = packedSetting(64, confConsts.TYPE_STR, 33)
+        self.settings['DNS_put_output'] = packedSetting(65, confConsts.TYPE_STR, 33)
+        self.settings['DNS_resolver'] = packedSetting(66, confConsts.TYPE_STR, 15)
+        self.settings['DNS_strategy'] = packedSetting(67, confConsts.TYPE_SHORT, enum=self.ROTATE_STRATEGY)
+        self.settings['DNS_strategy_rotate_seconds'] = packedSetting(68, confConsts.TYPE_INT)
+        self.settings['DNS_strategy_fail_x'] = packedSetting(69, confConsts.TYPE_INT)
+        self.settings['DNS_strategy_fail_seconds'] = packedSetting(70, confConsts.TYPE_INT)
 
 
 class cobaltstrikeConfig:
@@ -348,24 +410,45 @@ class cobaltstrikeConfig:
             if as_json:
                 continue
 
+            if conf_name in SILENT_CONFIGS:
+                continue
+
             if parsed_setting == 'Not Found' and quiet:
                 continue
-            if type(parsed_setting) != list:
-                if quiet and type(parsed_setting) == str and parsed_setting.strip() == '':
+
+            conf_type = type(parsed_setting)
+            if conf_type in (str, int, bytes):
+                if quiet and conf_type == str and parsed_setting.strip() == '':
                     continue
-                cli_print("{: <{width}} - {val}".format(conf_name, width=COLUMN_WIDTH-3, val=parsed_setting))
+                _cli_print("{: <{width}} - {val}".format(conf_name, width=COLUMN_WIDTH-3, val=parsed_setting))
+            
             elif parsed_setting == []:
                 if quiet:
                     continue
-                cli_print("{: <{width}} - {val}".format(conf_name, width=COLUMN_WIDTH-3, val='Empty'))
-            else:
-                cli_print("{: <{width}} - {val}".format(conf_name, width=COLUMN_WIDTH-3, val=parsed_setting[0]))
+                _cli_print("{: <{width}} - {val}".format(conf_name, width=COLUMN_WIDTH-3, val='Empty'))
+            
+            elif conf_type == dict: # the beautifulest code
+                conf_data = []
+                for k in parsed_setting.keys():
+                    if parsed_setting[k]:
+                        conf_data.append(k)
+                        for v in parsed_setting[k]:
+                            conf_data.append('\t' + v)
+                if not conf_data:
+                    continue
+                _cli_print("{: <{width}} - {val}".format(conf_name, width=COLUMN_WIDTH-3, val=conf_data[0]))
+                for val in conf_data[1:]:
+                    _cli_print(' ' * COLUMN_WIDTH, end='')
+                    _cli_print(val)        
+            
+            elif conf_type == list: # list
+                _cli_print("{: <{width}} - {val}".format(conf_name, width=COLUMN_WIDTH-3, val=parsed_setting[0]))
                 for val in parsed_setting[1:]:
-                    cli_print(' ' * COLUMN_WIDTH, end='')
-                    cli_print(val)
+                    _cli_print(' ' * COLUMN_WIDTH, end='')
+                    _cli_print(val)
 
         if as_json:
-            cli_print(json.dumps(parsed_config, cls=Base64Encoder))
+            _cli_print(json.dumps(parsed_config, cls=Base64Encoder))
 
         return parsed_config
 
@@ -401,7 +484,7 @@ class cobaltstrikeConfig:
         pe = pefile.PE(data=self.data)
         data_sections = [s for s in pe.sections if s.Name.find(b'.data') != -1]
         if not data_sections:
-            cli_print("Failed to find .data section")
+            _cli_print("Failed to find .data section")
             return False
         data = data_sections[0].get_data()
 
@@ -433,12 +516,29 @@ class cobaltstrikeConfig:
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Parses CobaltStrike Beacon's configuration from PE or memory dump.")
-    parser.add_argument("path", help="Beacon file path")
+    parser = argparse.ArgumentParser(description="Parses CobaltStrike Beacon's configuration from PE, memory dump or URL.")
+    parser.add_argument("beacon", help="This can be a file path or a url (if started with http/s)")
     parser.add_argument("--json", help="Print as json", action="store_true", default=False)
     parser.add_argument("--quiet", help="Do not print missing or empty settings", action="store_true", default=False)
     parser.add_argument("--version", help="Try as specific cobalt version (3 or 4). If not specified, tries both.", type=int)
     args = parser.parse_args()
-    if not cobaltstrikeConfig(args.path).parse_config(version=args.version, quiet=args.quiet, as_json=args.json):
-        if not cobaltstrikeConfig(args.path).parse_encrypted_config(version=args.version, quiet=args.quiet, as_json=args.json):
-            print("Failed to find any beacon configuration")
+
+    if os.path.isfile(args.beacon):
+        if cobaltstrikeConfig(args.beacon).parse_config(version=args.version, quiet=args.quiet, as_json=args.json) or \
+        cobaltstrikeConfig(args.beacon).parse_encrypted_config(version=args.version, quiet=args.quiet, as_json=args.json):
+            exit(0)
+
+    elif args.beacon.lower().startswith('http'):
+        x86_beacon_data = get_beacon_data(args.beacon, 'x86')
+        x64_beacon_data = get_beacon_data(args.beacon, 'x64')
+        if not x86_beacon_data and not x64_beacon_data:
+            print("[-] Failed to find any beacon configuration")
+            exit(1)
+
+        conf_data = x86_beacon_data or x64_beacon_data
+        if cobaltstrikeConfig(BytesIO(conf_data)).parse_config(version=args.version, quiet=args.quiet, as_json=args.json) or \
+        cobaltstrikeConfig(BytesIO(conf_data)).parse_encrypted_config(version=args.version, quiet=args.quiet, as_json=args.json):
+            exit(0)
+
+    print("[-] Failed to find any beacon configuration")
+    exit(1)
