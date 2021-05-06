@@ -493,6 +493,8 @@ class cobaltstrikeConfig:
                 if ba == -1:
                     return None
                 ba += 5
+            else:
+                return None
             key = data[ba:ba+4]
             size = struct.unpack("I", xor(key, data[ba+4:ba+8]))[0]
             # Decrypt
