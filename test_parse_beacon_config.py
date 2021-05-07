@@ -26,7 +26,7 @@ class TestBeaconParsing(unittest.TestCase):
         parser = cobaltstrikeConfig(f)
         conf = parser.parse_encrypted_config()
         self.assertEqual(conf.get("HttpPostUri"), "/submit.php")
-    
+
     def test_encrypted_x86_64(self):
         path = os.path.join(
             os.path.dirname(__file__),
@@ -59,7 +59,7 @@ class TestBeaconParsing(unittest.TestCase):
         parser = cobaltstrikeConfig(f)
         conf = parser.parse_config()
         self.assertIn('header "CGGGGG"', conf.get("HttpGet_Metadata").get("Metadata"))
-        
+
 
 if __name__ == "__main__":
     unittest.main()
