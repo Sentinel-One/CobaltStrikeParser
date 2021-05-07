@@ -49,6 +49,17 @@ class TestBeaconParsing(unittest.TestCase):
         conf = parser.parse_encrypted_config()
         self.assertEqual(conf.get("PublicKey_MD5"), "8ac540617dddcdf575f6dc207abb7344")
 
+    def test_trial_beacon_x86(self):
+        path = os.path.join(
+            os.path.dirname(__file__),
+            "samples",
+            "4d1d732125e4d1a3ba0571e0cd892cf8e0dce854387ee405f75df4dcfb0f616b.zip",
+        )
+        f = decrypt_sample(path)
+        parser = cobaltstrikeConfig(f)
+        conf = parser.parse_config()
+        self.assertIn('header "CGGGGG"', conf.get("HttpGet_Metadata").get("Metadata"))
+        
 
 if __name__ == "__main__":
     unittest.main()
