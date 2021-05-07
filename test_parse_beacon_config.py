@@ -26,6 +26,17 @@ class TestBeaconParsing(unittest.TestCase):
         parser = cobaltstrikeConfig(f)
         conf = parser.parse_encrypted_config()
         self.assertEqual(conf.get("HttpPostUri"), "/submit.php")
+    
+    def test_encrypted_x86_64(self):
+        path = os.path.join(
+            os.path.dirname(__file__),
+            "samples",
+            "10fd211ba97ddf12aecb1e7931d92c3ba37421c362cb1490e0203c1bd88ec141.zip",
+        )
+        f = decrypt_sample(path)
+        parser = cobaltstrikeConfig(f)
+        conf = parser.parse_encrypted_config()
+        self.assertEqual(conf.get("PublicKey_MD5"), "d2c8ec15d925e2514714d619022f7cdf")
 
 
 if __name__ == "__main__":
