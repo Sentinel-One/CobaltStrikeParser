@@ -473,39 +473,6 @@ class cobaltstrikeConfig:
 
 
     def parse_encrypted_config_non_pe(self, version=None, quiet=False, as_json=False):
-        def xor(a, b):
-            return bytearray([a[0]^b[0], a[1]^b[1], a[2]^b[2], a[3]^b[3]])
-        # All credits to @Te-k: Shameless rip of https://github.com/Te-k/cobaltstrike/blob/master/lib.py
-        def decrypt_beacon(data):
-            # Find the base address
-            if data.startswith(b"\xfc\xe8"):
-                # 32 bits
-                # The base address of the sample change depending on the code
-                ba = data.find(b"\xe8\xd4\xff\xff\xff")
-                if ba == -1:
-                    ba = data.find(b"\xe8\xd0\xff\xff\xff")
-                    if ba == -1:
-                        return None
-                ba += 5
-            elif data.startswith(b"\xfc\x48"):
-                # 64 bits
-                ba = data.find(b"\xe8\xc8\xff\xff\xff")
-                if ba == -1:
-                    return None
-                ba += 5
-            else:
-                return None
-            key = data[ba:ba+4]
-            size = struct.unpack("I", xor(key, data[ba+4:ba+8]))[0]
-            # Decrypt
-            res = bytearray()
-            i = ba+8
-            while i < (len(data) - ba - 8):
-                d = data[i:i+4]
-                res += xor(d, key)
-                key = d
-                i += 4
-            return res
         self.data = decrypt_beacon(self.data)
         return self.parse_config(version=version, quiet=quiet, as_json=as_json)
 

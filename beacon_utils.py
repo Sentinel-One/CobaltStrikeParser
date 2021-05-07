@@ -55,7 +55,10 @@ def get_beacon_data(url, arch):
     eicar_offset = buf.find(b'EICAR-STANDARD-ANTIVIRUS-TEST-FILE')
     if eicar_offset != -1:
         return buf
+    return decrypt_beacon(buf)
 
+
+def decrypt_beacon(buf):
     offset = buf.find(b'\xff\xff\xff')
     if offset == -1:
         _cli_print('[-] Unexpected buffer received')
@@ -74,5 +77,4 @@ def get_beacon_data(url, arch):
             b = struct.unpack_from('<I', buf, i*4+4)[0]
             с = a ^ b
             decoded_data += struct.pack('<I', с)
-
         return decoded_data
