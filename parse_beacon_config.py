@@ -472,6 +472,10 @@ class cobaltstrikeConfig:
         return None
 
 
+    def parse_encrypted_config_non_pe(self, version=None, quiet=False, as_json=False):
+        self.data = decrypt_beacon(self.data)
+        return self.parse_config(version=version, quiet=quiet, as_json=as_json)
+
     def parse_encrypted_config(self, version=None, quiet=False, as_json=False):
         '''
         Parses beacon's configuration from stager dll or memory dump
@@ -481,7 +485,11 @@ class cobaltstrikeConfig:
         :bool as_json: Whether to dump as json
         '''
 
-        pe = pefile.PE(data=self.data)
+        try:
+            pe = pefile.PE(data=self.data)
+        except pefile.PEFormatError:
+            return self.parse_encrypted_config_non_pe(version=version, quiet=quiet, as_json=as_json)
+
         data_sections = [s for s in pe.sections if s.Name.find(b'.data') != -1]
         if not data_sections:
             _cli_print("Failed to find .data section")
