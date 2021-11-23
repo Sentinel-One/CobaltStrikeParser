@@ -548,5 +548,9 @@ if __name__ == '__main__':
         cobaltstrikeConfig(BytesIO(conf_data)).parse_encrypted_config(version=args.version, quiet=args.quiet, as_json=args.json):
             exit(0)
 
+    else:
+        print("[-] Target path is not an existing file or a C2 URL")
+        exit(1)
+
     print("[-] Failed to find any beacon configuration")
     exit(1)
