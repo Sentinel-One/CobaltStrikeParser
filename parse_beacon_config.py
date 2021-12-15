@@ -318,7 +318,8 @@ class BeaconSettings:
         self.settings['Proxy_User'] = packedSetting(33, confConsts.TYPE_STR, 64)
         self.settings['Proxy_Password'] = packedSetting(34, confConsts.TYPE_STR, 64)
         self.settings['Proxy_Behavior'] = packedSetting(35, confConsts.TYPE_SHORT, enum=self.ACCESS_TYPE)
-        # Option 36 is deprecated
+        # Option 36 is deprecated in beacon < 4.5
+        self.settings['Watermark_Hash'] = packedSetting(36, confConsts.TYPE_STR, 32)
         self.settings['Watermark'] = packedSetting(37, confConsts.TYPE_INT)
         self.settings['bStageCleanup'] = packedSetting(38, confConsts.TYPE_SHORT, isBool=True)
         self.settings['bCFGCaution'] = packedSetting(39, confConsts.TYPE_SHORT, isBool=True)
