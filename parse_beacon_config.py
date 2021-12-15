@@ -359,7 +359,12 @@ class BeaconSettings:
         self.settings['DNS_strategy'] = packedSetting(67, confConsts.TYPE_SHORT, enum=self.ROTATE_STRATEGY)
         self.settings['DNS_strategy_rotate_seconds'] = packedSetting(68, confConsts.TYPE_INT)
         self.settings['DNS_strategy_fail_x'] = packedSetting(69, confConsts.TYPE_INT)
-        self.settings['DNS_strategy_fail_seconds'] = packedSetting(70, confConsts.TYPE_INT)
+        self.settings['DNS_strategy_fail_seconds'] = packedSetting(70, confConsts.TYPE_INT)        
+        
+        # Retry settings (CS 4.5+ only)
+        self.settings['Retry_Max_Attempts'] = packedSetting(71, confConsts.TYPE_INT)
+        self.settings['Retry_Increase_Attempts'] = packedSetting(72, confConsts.TYPE_INT)
+        self.settings['Retry_Duration'] = packedSetting(73, confConsts.TYPE_INT)
 
 
 class cobaltstrikeConfig:
