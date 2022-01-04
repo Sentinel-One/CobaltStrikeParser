@@ -60,6 +60,20 @@ class TestBeaconParsing(unittest.TestCase):
         conf = parser.parse_config()
         self.assertIn('header "CGGGGG"', conf.get("HttpGet_Metadata").get("Metadata"))
 
+    def test_beacon_45_x86_64(self):
+        path = os.path.join(
+            os.path.dirname(__file__),
+            "samples",
+            "320a5f715aa5724c21013fc14bfe0a10893ce9723ebc25d9ae9f06f5517795d4.zip",
+        )
+        f = decrypt_sample(path)
+        parser = cobaltstrikeConfig(f)
+        conf = parser.parse_config()
+        self.assertEqual(conf.get("Watermark_Hash"), "xi1knfb/QiftN2EAhdtcyw==")
+        self.assertEqual(conf.get("Retry_Max_Attempts"), 0)
+        self.assertEqual(conf.get("Retry_Increase_Attempts"), 0)
+        self.assertEqual(conf.get("Retry_Duration"), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
