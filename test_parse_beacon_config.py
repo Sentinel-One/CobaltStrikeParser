@@ -74,6 +74,18 @@ class TestBeaconParsing(unittest.TestCase):
         self.assertEqual(conf.get("Retry_Increase_Attempts"), 0)
         self.assertEqual(conf.get("Retry_Duration"), 0)
 
+    def test_csv4_startbytes(self):
+        path = os.path.join(
+            os.path.dirname(__file__),
+            "samples",
+            "5cd19717831e5259d535783be33f86ad7e77f8df25cd8f342da4f4f33327d989.zip",
+        )
+        f = decrypt_sample(path)
+        parser = cobaltstrikeConfig(f)
+        conf = parser.parse_config()
+        self.assertNotEqual(conf, None)
+
+
 
 if __name__ == "__main__":
     unittest.main()
