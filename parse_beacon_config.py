@@ -112,11 +112,11 @@ class packedSetting:
                     current_category = 'SessionId' if name == 0 else 'Output'
             elif tstep in (1, 2, 5, 6):
                 length = read_dword_be(dio)
-                step_data = dio.read(length).decode()
+                step_data = dio.read(length).decode('latin-1')
                 trans[current_category].append(BeaconSettings.TSTEPS[tstep] + ' "' + step_data + '"')
             elif tstep in (10, 16, 9):
                 length = read_dword_be(dio)
-                step_data = dio.read(length).decode()
+                step_data = dio.read(length).decode('latin-1')
                 if tstep == 9:
                     trans['ConstParams'].append(step_data)
                 else:
@@ -249,7 +249,7 @@ class packedSetting:
         if self.is_headers:
             return self.parse_transformdata(conf_data)
 
-        conf_data = conf_data.strip(b'\x00').decode()
+        conf_data = conf_data.strip(b'\x00').decode('latin-1')
         return conf_data
 
 
