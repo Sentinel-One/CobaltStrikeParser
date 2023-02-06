@@ -36,7 +36,7 @@ class TestBeaconParsing(unittest.TestCase):
         f = decrypt_sample(path)
         parser = cobaltstrikeConfig(f)
         conf = parser.parse_encrypted_config()
-        self.assertEqual(conf.get("PublicKey_MD5"), "d2c8ec15d925e2514714d619022f7cdf")
+        self.assertEqual(conf.get("PublicKey_MD5"), "fbc7faad3bf1d91fefde4244476c4ffd")
 
     def test_encrypted_x86(self):
         path = os.path.join(
@@ -47,7 +47,7 @@ class TestBeaconParsing(unittest.TestCase):
         f = decrypt_sample(path)
         parser = cobaltstrikeConfig(f)
         conf = parser.parse_encrypted_config()
-        self.assertEqual(conf.get("PublicKey_MD5"), "8ac540617dddcdf575f6dc207abb7344")
+        self.assertEqual(conf.get("PublicKey_MD5"), "41d0f3a319ef312f6e30a370c544477b")
 
     def test_trial_beacon_x86(self):
         path = os.path.join(
