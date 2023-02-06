@@ -241,7 +241,6 @@ class packedSetting:
 
                 conf_data = prog
             if self.hashBlob:
-                conf_data = conf_data.strip(b'\x00')
                 conf_data = hashlib.md5(conf_data).hexdigest()
 
             return conf_data
