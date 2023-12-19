@@ -12,6 +12,11 @@ setuptools.setup(
         long_description=long_description,
         url="https://github.com/Sentinel-One/CobaltStrikeParser",
         py_modules=["parse_beacon_config", "beacon_utils"],
+        entry_points = {
+              'console_scripts': [
+                  'parse_beacon_config = parse_beacon_config:main',
+              ],
+          },
         install_requires=["urllib3",
             "requests",
             "netstruct==1.1.2",
