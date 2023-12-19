@@ -2,7 +2,7 @@
 Python parser for CobaltStrike Beacon's configuration
 
 ## Description
-Use `parse_beacon_config.py` for stageless beacons, memory dumps or C2 urls with metasploit compatibility mode (default true).  
+Use `parse_beacon_config` for stageless beacons, memory dumps or C2 urls with metasploit compatibility mode (default true).  
 Many stageless beacons are PEs where the beacon code itself is stored in the `.data` section and xored with 4-byte key.  
 The script tries to find the xor key and data heuristically, decrypt the data and parse the configuration from it.
 
@@ -12,7 +12,7 @@ The repo now also includes a small commuincation module (comm.py) that can help 
 
 ## Usage
 ```
-usage: parse_beacon_config.py [-h] [--json] [--quiet] [--version VERSION] beacon
+usage: parse_beacon_config [-h] [--json] [--quiet] [--version VERSION] beacon
 
 Parses CobaltStrike Beacon's configuration from PE, memory dump or URL.
 

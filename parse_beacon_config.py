@@ -528,7 +528,7 @@ class cobaltstrikeConfig:
         return self.parse_config(version=version, quiet=quiet, as_json=as_json)
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description="Parses CobaltStrike Beacon's configuration from PE, memory dump or URL.")
     parser.add_argument("beacon", help="This can be a file path or a url (if started with http/s)")
     parser.add_argument("--json", help="Print as json", action="store_true", default=False)
@@ -559,3 +559,6 @@ if __name__ == '__main__':
 
     print("[-] Failed to find any beacon configuration")
     exit(1)
+
+if __name__ == '__main__':
+    main()
